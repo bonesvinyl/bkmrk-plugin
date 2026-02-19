@@ -1,8 +1,11 @@
 {
   "name": "bkmrk-plugin",
-  "owner": "bonesvinyl",
+  "owner": {
+    "name": "bonesvinyl"
+  },
   "plugins": [
     {
+      "name": "bkmrk",
       "source": "./plugins/bkmrk",
       "description": "Bookmark intelligence agent — turns X bookmarks into executed dev tasks via bkmrkapp.com",
       "version": "1.0.0"
