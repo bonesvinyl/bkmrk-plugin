@@ -1,5 +1,5 @@
 {
   "name": "bkmrk",
-  "description": "Execute queued bookmarks, search analysis, manage cards, and trigger syncs via bkmrkapp.com",
+  "description": "Execute staged bookmarks, search analysis, manage cards, and trigger syncs via bkmrkapp.com",
   "version": "1.0.0"
 }
