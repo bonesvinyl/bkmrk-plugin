@@ -46,8 +46,9 @@ Use WebFetch or Bash with curl to make these calls.
 On every invocation:
 1. Read `~/.bkmrk/config.json`
 2. Fetch `GET /api/context` to understand current state
-3. Report a brief status: "Connected as @username — N staged, N new, N done"
-4. Then respond to whatever the user asked
+3. Fetch `GET /api/projects` and build an **active projects list** — only projects where `archived` is falsy (not `true`). Cache this for the session.
+4. Report a brief status: "Connected as @username — N staged, N new, N done (N active projects)"
+5. Then respond to whatever the user asked
 
 ## What You Can Do
 
@@ -55,14 +56,15 @@ Respond to the user's request. You are NOT a hardcoded workflow — you're an in
 
 ### Execute staged items
 1. Fetch `GET /api/analysis` and filter for items where `card_state.status === "staged"`
-2. Present them with: tweet snippet, matching project, priority, relevance score
-3. Use AskUserQuestion: "Run all N" | "Let me pick" | "Cancel"
-4. If picking → use AskUserQuestion with multiSelect
-5. Ask for execution mode (unless config has default): "Sequential" | "Parallel"
-6. **Assemble rich execution context** for each item (see Context Assembly below)
-7. For each item, use the Task tool to launch agents with the assembled context
-8. After execution, evaluate results — only mark as `done` if the task was actually accomplished
-9. Report results with specifics (what changed, what was created, what was verified)
+2. For each item, filter `analysis.matching_projects` to only include **active (non-archived) projects**
+3. Present them with: tweet snippet, matching project (active only), priority, relevance score
+4. Use AskUserQuestion: "Run all N" | "Let me pick" | "Cancel"
+5. If picking → use AskUserQuestion with multiSelect
+6. Ask for execution mode (unless config has default): "Sequential" | "Parallel"
+7. **Assemble rich execution context** for each item (see Context Assembly below)
+8. For each item, use the Task tool to launch agents with the assembled context
+9. After execution, evaluate results — only mark as `done` if the task was actually accomplished
+10. Report results with specifics (what changed, what was created, what was verified)
 
 ### Search and stage
 - "Find anything about SwiftUI" → search analysis items, present matches, offer to stage
@@ -80,11 +82,29 @@ Respond to the user's request. You are NOT a hardcoded workflow — you're an in
 - "What's new since last time?" → check for new items, summarize findings
 - "Give me a status report" → context endpoint has all stats
 
+## Archived Project Filtering
+
+**CRITICAL:** Projects that are archived on the bkmrkapp.com dashboard MUST be excluded from all operations. The backend analysis pipeline may still return matches against archived projects — the agent MUST filter these out client-side.
+
+### How it works:
+1. On startup, fetch `GET /api/projects` and identify active projects (where `archived` is falsy)
+2. Store the active project names/IDs for the session
+3. When processing `analysis.matching_projects` for any bookmark, **remove any project that is not in the active list**
+4. If a bookmark's only matching projects were all archived, treat it as **unmatched** — present it without a project context and note: "Original matches were archived projects — may need re-analysis"
+5. When presenting items to the user, never show archived projects as matches
+
+### When mismatches are detected:
+If the user reports that a bookmark was matched to an archived/deleted project:
+1. Confirm which projects are active via `GET /api/projects`
+2. Filter the stale matches out
+3. If re-analysis is needed, trigger `POST /api/sync` to re-run the pipeline — the backend should pick up the current project state
+4. Present corrected results showing only active project matches
+
 ## Project Path Resolution
 
 When executing prompts, the agent needs to know where projects live locally. Resolution order:
 1. `project_paths` in `~/.bkmrk/config.json` (user-configured local overrides)
-2. `local_path` field from `GET /api/projects` (set in bkmrkapp.com settings)
+2. `local_path` field from `GET /api/projects` — **only for active (non-archived) projects**
 3. Ask the user if neither is set
 
 If a project path is discovered during execution (e.g., user says "it's at ~/Projects/foo"), offer to save it to config for next time.
@@ -103,7 +123,7 @@ For each staged item, the `/api/analysis` response includes rich data. You MUST 
 - `analysis.claude_code_prompt` — the generated task prompt
 - `analysis.relevance_explanation` — why this matters
 - `analysis.implementation_suggestion` — suggested approach
-- `analysis.matching_projects` — which projects this applies to
+- `analysis.matching_projects` — which projects this applies to (**filter out archived projects before using**)
 
 ### Execution payload template:
 
@@ -143,6 +163,7 @@ Build the agent prompt using this structure:
 ```
 
 ### Key rules:
+- **Always filter `analysis.matching_projects` against the active projects list** — never pass archived project context to execution agents
 - **Always include full `enriched_data.article_content`** — this contains setup instructions, code blocks, config examples that the `claude_code_prompt` alone omits
 - **Always include source URLs** and tell the agent it CAN and SHOULD WebFetch them for the latest docs
 - **Always include the project's `local_path`** so the agent knows where to work
